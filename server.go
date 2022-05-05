@@ -10,16 +10,56 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var addr = flag.String("addr", "localhost:8080", "http service address")
+//get actuall port
+func getPort() string {
+	p := os.Getenv("PORT")
+	if p != "" {
+		return ":" + p
+	}
+	return ":8080"
+}
+
+var addr = flag.String("addr", getPort(), "http service address")
 
 var upgrader = websocket.Upgrader{} // use default options
 
+func echoEur() string {
+	cl := &http.Client{}
+	rate, err := http.NewRequest("GET", "https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rate.Header.Add("Accept", "application/json")
+	rate.Header.Add("Content-Type", "application/json")
+	resp, err := cl.Do(rate)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//separate only line which contains EUR
+	bodyString := string(bodyBytes)
+	//get only line which contains EUR
+	body := strings.Fields(bodyString)
+	temp := strings.Split(body[8], "|")
+	return "Actual price of one € is " + temp[4] + " CZK"
+}
+func echoTime() string {
+	return "Actual server time is " + time.Now().Format("15:04:05")
+}
+func echoName() string {
+	return "Chatbots name is Pepa"
+}
 func echo(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -37,34 +77,16 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		inp := string(message)
 		mess := "Bot: "
 		if strings.Contains(inp, "name") {
-			mess += "My name is Pepa"
+			mess += echoName()
 		}
 		if strings.Contains(inp, "time") {
-			mess += "It is now " + time.Now().Format("15:04:05")
+			mess += echoTime()
 		}
 		if strings.Contains(inp, "EUR") {
-			cl := &http.Client{}
-			rate, err := http.NewRequest("GET", "https://www.cnb.cz/cs/financni-trhy/devizovy-trh/kurzy-devizoveho-trhu/kurzy-devizoveho-trhu/denni_kurz.txt", nil)
-			if err != nil {
-				log.Fatal(err)
-			}
-			rate.Header.Add("Accept", "application/json")
-			rate.Header.Add("Content-Type", "application/json")
-			resp, err := cl.Do(rate)
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer resp.Body.Close()
-			bodyBytes, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-			//separate only line which contains EUR
-			bodyString := string(bodyBytes)
-			//get only line which contains EUR
-			body := strings.Fields(bodyString)
-			temp := strings.Split(body[8], "|")
-			mess += "EUR rate is " + temp[4] + " CZK"
+			mess += echoEur()
+		}
+		if mess == "Bot: " {
+			mess += "Unknown command or poorly specified text"
 		}
 		err = c.WriteMessage(mt, []byte(mess))
 		if err != nil {
@@ -90,6 +112,7 @@ var homeTemplate = template.Must(template.New("").Parse(`
 <!DOCTYPE html>
 <html>
 <head>
+<title>Websocket Echo</title>
 <meta charset="utf-8">
 <script>  
 window.addEventListener("load", function(evt) {
